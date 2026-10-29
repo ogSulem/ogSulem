@@ -1,0 +1,58 @@
+name: refresh contribution widget
+
+on:
+  schedule:
+    - cron: "0 3 * * 1" # mondays 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install pillow numpy scipy
+
+      - name: Fetch contribution calendar
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api graphql -f query='
+          query {
+            user(login: "ogSulem") {
+              contributionsCollection {
+                contributionCalendar {
+                  totalContributions
+                  weeks {
+                    contributionDays {
+                      contributionCount
+                      date
+                      color
+                    }
+                  }
+                }
+              }
+            }
+          }' > assets/src/contrib.json
+
+      - name: Rebuild widget
+        run: python3 assets/src/make_widgets.py snake && python3 - << 'py'
+import sys; sys.argv=['x']; exec(open('assets/src/make_widgets.py').read().split('# ---------------------------------------------------------------- dispatcher')[0]); make_metrics()
+py
+
+      - name: Commit
+        run: |
+          git config user.name "sulem-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/widget_snake.gif assets/widget_metrics.png assets/src/contrib.json
+          git commit -m "chore: refresh contribution widget" || echo "nothing to commit"
+          git push
